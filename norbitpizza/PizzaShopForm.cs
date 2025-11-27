@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -31,14 +30,14 @@ namespace norbitpizza
         private List<PizzaItem> _cartItems = new List<PizzaItem>();
         private FlowLayoutPanel _cartItemsPanel;
 
-        private readonly (string imageFile, string header, string description, string price)[] _offers = new[]
+        // Спецпредложения без путей к изображениям
+        private readonly (string header, string description, string price)[] _offers = new[]
         {
-            ("offer1.jpg", "ПИЦЦА ДЕНЬ!", "Пицца 'Маргарита' всего за 299₽", "299 ₽"),
-            ("offer2.jpg", "СЕМЕЙНЫЙ НАБОР", "Большая пицца + 2 напитка за 599₽", "599 ₽"),
-            ("offer3.jpg", "НОВИНКА!", "Пицца с трюфелем и моцареллой", "799 ₽")
+            ("ПИЦЦА ДЕНЬ!", "Пицца 'Маргарита' всего за 299₽", "299 ₽"),
+            ("СЕМЕЙНЫЙ НАБОР", "Большая пицца + 2 напитка за 599₽", "599 ₽"),
+            ("НОВИНКА!", "Пицца с трюфелем и моцареллой", "799 ₽")
         };
 
-        // 🔴 Реальные пиццы и напитки — 25 штук (цены как decimal!)
         private readonly (string name, string desc, decimal price)[] _menuItems = new[]
         {
             ("Маргарита", "Классика: томатный соус, моцарелла и свежий базилик", 499m),
@@ -88,7 +87,7 @@ namespace norbitpizza
 
         private void InitializeInterface()
         {
-            // === Верхняя панель ===
+            // Верхняя панель
             Panel topPanel = new Panel
             {
                 Height = 60,
@@ -121,7 +120,7 @@ namespace norbitpizza
             topPanel.Controls.Add(titleLabel);
             topPanel.Controls.Add(_cartButton);
 
-            // === Панель корзины ===
+            // Панель корзины
             _cartPanel = new Panel
             {
                 Width = 320,
@@ -187,7 +186,7 @@ namespace norbitpizza
             _cartPanel.Controls.Add(_cartItemsPanel);
             _cartPanel.Controls.Add(cartHeader);
 
-            // === Спецпредложение (БЕЗ КНОПКИ ЗАКРЫТЬ) ===
+            // Спецпредложение (без кнопки закрытия)
             _specialOfferTile = new Panel
             {
                 Height = 140,
@@ -241,17 +240,20 @@ namespace norbitpizza
             buySpecialBtn.FlatAppearance.BorderSize = 0;
             buySpecialBtn.Click += (s, e) =>
             {
+                // Определяем цену спецпредложения по тексту (для простоты — фиксированная логика)
+                decimal price = 299m;
+                if (_offerPriceLabel.Text.Contains("599")) price = 599m;
+                if (_offerPriceLabel.Text.Contains("799")) price = 799m;
+
                 AddToCart(new PizzaItem
                 {
-                    Name = "Спецпредложение",
-                    Description = "Акция недели",
-                    Price = 399m,
+                    Name = _offerHeaderLabel.Text,
+                    Description = _offerDescLabel.Text,
+                    Price = price,
                     Quantity = 1
                 });
                 _cartPanel.Visible = true;
             };
-
-            // 🔻 КНОПКА ЗАКРЫТЬ УДАЛЕНА
 
             _specialOfferTile.Controls.Add(_offerImageBox);
             _specialOfferTile.Controls.Add(_offerHeaderLabel);
@@ -259,7 +261,7 @@ namespace norbitpizza
             _specialOfferTile.Controls.Add(_offerPriceLabel);
             _specialOfferTile.Controls.Add(buySpecialBtn);
 
-            // === Панель пицц ===
+            // Панель пицц
             _pizzaPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -271,14 +273,14 @@ namespace norbitpizza
             };
             try { SetWindowTheme(_pizzaPanel.Handle, "DarkMode_Explorer", null); } catch { }
 
+            // Включаем двойную буферизацию для плавной прокрутки
             typeof(Panel).InvokeMember("DoubleBuffered",
                 System.Reflection.BindingFlags.NonPublic |
                 System.Reflection.BindingFlags.Instance |
                 System.Reflection.BindingFlags.SetProperty,
                 null, _pizzaPanel, new object[] { true });
 
-            CreatePizzaTiles(_menuItems.Length); // 25 позиций
-
+            // Создаём плитки только после добавления на форму
             Panel contentPanel = new Panel { Dock = DockStyle.Fill };
             contentPanel.Controls.Add(_pizzaPanel);
             contentPanel.Controls.Add(_specialOfferTile);
@@ -287,15 +289,28 @@ namespace norbitpizza
             this.Controls.Add(contentPanel);
             this.Controls.Add(topPanel);
 
+            // Теперь создаём плитки — форма уже имеет размер
+            CreatePizzaTiles(_menuItems.Length);
+
+            // Обновляем спецпредложение и запускаем таймер
             UpdateSpecialOffer();
-            _offerTimer = new Timer { Interval = 30_000 };
+            _offerTimer = new Timer { Interval = 30_000 }; // каждые 30 секунд
             _offerTimer.Tick += (s, e) => UpdateSpecialOffer();
             _offerTimer.Start();
         }
 
         private void AddToCart(PizzaItem item)
         {
-            _cartItems.Add(item);
+            // Проверяем, есть ли уже такой товар в корзине
+            var existing = _cartItems.Find(i => i.Name == item.Name && i.Description == item.Description);
+            if (existing != null)
+            {
+                existing.Quantity += item.Quantity;
+            }
+            else
+            {
+                _cartItems.Add(item);
+            }
             RefreshCart();
         }
 
@@ -322,18 +337,12 @@ namespace norbitpizza
                     Location = new Point(10, 10),
                     BackColor = Color.FromArgb(50, 50, 50)
                 };
+
+                string emoji = IsPizza(item.Name) ? "🍕" : "🥤";
                 img.Controls.Add(new Label
                 {
-                    Text = item.Name.Contains("Пицца") ||
-                           item.Name.Contains("Маргарита") || item.Name.Contains("Пепперони") ||
-                           item.Name.Contains("Четыре сыра") || item.Name.Contains("Мясная") ||
-                           item.Name.Contains("Грибная") || item.Name.Contains("Овощная") ||
-                           item.Name.Contains("Калифорния") || item.Name.Contains("Диабло") ||
-                           item.Name.Contains("Барбекю") || item.Name.Contains("Морская") ||
-                           item.Name.Contains("Трюфельная") || item.Name.Contains("Карбонара") ||
-                           item.Name.Contains("Французская") || item.Name.Contains("Веганская")
-                        ? "🍕" : "🥤",
-                    ForeColor = Color.Orange,
+                    Text = emoji,
+                    ForeColor = emoji == "🍕" ? Color.Orange : Color.Cyan,
                     Font = new Font("Segoe UI", 20),
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter
@@ -361,10 +370,10 @@ namespace norbitpizza
 
                 Label qtyLabel = new Label
                 {
-                    Text = $"x{item.Quantity}",
+                    Text = $"Количество: {item.Quantity}",
                     ForeColor = Color.LimeGreen,
                     Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                    Location = new Point(100, 50),
+                    Location = new Point(100, 57),
                     AutoSize = true
                 };
 
@@ -373,7 +382,7 @@ namespace norbitpizza
                     Text = $"{item.Price * item.Quantity} ₽",
                     ForeColor = Color.Orange,
                     Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                    Location = new Point(100, 70),
+                    Location = new Point(100, 75),
                     AutoSize = true
                 };
 
@@ -402,7 +411,19 @@ namespace norbitpizza
                 _cartItemsPanel.Controls.Add(itemPanel);
             }
 
-            _totalLabel.Text = $"Итого: {CalculateTotal():F0} ₽";
+            _totalLabel.Text = $"Итого: {CalculateTotal():F0} ₽ {CalculateTotal()/(decimal)0.02:F0} HMSTR";
+        }
+
+        private bool IsPizza(string name)
+        {
+            string[] pizzaKeywords = {
+                "Маргарита", "Пепперони", "Гавайская", "Четыре сыра", "Мясная",
+                "Грибная", "Овощная", "Калифорния", "Диабло", "Барбекю",
+                "Морская", "Трюфельная", "Карбонара", "Французская", "Веганская"
+            };
+            foreach (var word in pizzaKeywords)
+                if (name.Contains(word)) return true;
+            return false;
         }
 
         private void ClearCart()
@@ -430,35 +451,30 @@ namespace norbitpizza
             _offerDescLabel.Text = offer.description;
             _offerPriceLabel.Text = offer.price;
 
-            string imagePath = Path.Combine(Application.StartupPath, offer.imageFile);
-            if (File.Exists(imagePath))
-            {
-                try
-                {
-                    _offerImageBox.Image?.Dispose();
-                    _offerImageBox.Image = Image.FromFile(imagePath);
-                    _offerImageBox.Controls.Clear();
-                }
-                catch
-                {
-                    ShowImagePlaceholder();
-                }
-            }
-            else
-            {
-                ShowImagePlaceholder();
-            }
-        }
-
-        private void ShowImagePlaceholder()
-        {
+            // Очищаем изображение и показываем эмодзи
             _offerImageBox.Image = null;
             _offerImageBox.Controls.Clear();
+
+            string emoji = "🍕";
+            if (offer.description.Contains("напитк") ||
+                offer.description.Contains("Coca") ||
+                offer.description.Contains("Sprite") ||
+                offer.description.Contains("Fanta") ||
+                offer.description.Contains("вода") ||
+                offer.description.Contains("сок") ||
+                offer.description.Contains("лимонад") ||
+                offer.description.Contains("морс") ||
+                offer.description.Contains("чай") ||
+                offer.description.Contains("кофе"))
+            {
+                emoji = "🥤";
+            }
+
             _offerImageBox.Controls.Add(new Label
             {
-                Text = "📷",
-                ForeColor = Color.Gold,
-                Font = new Font("Segoe UI", 24),
+                Text = emoji,
+                ForeColor = emoji == "🍕" ? Color.Orange : Color.Cyan,
+                Font = new Font("Segoe UI", 28, FontStyle.Bold),
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter
             });
@@ -490,18 +506,12 @@ namespace norbitpizza
                     Location = new Point(10, 10),
                     BackColor = Color.FromArgb(60, 60, 60)
                 };
+
+                string emoji = IsPizza(name) ? "🍕" : "🥤";
                 pb.Controls.Add(new Label
                 {
-                    Text = name.Contains("Пицца") ||
-                           name.Contains("Маргарита") || name.Contains("Пепперони") ||
-                           name.Contains("Четыре сыра") || name.Contains("Мясная") ||
-                           name.Contains("Грибная") || name.Contains("Овощная") ||
-                           name.Contains("Калифорния") || name.Contains("Диабло") ||
-                           name.Contains("Барбекю") || name.Contains("Морская") ||
-                           name.Contains("Трюфельная") || name.Contains("Карбонара") ||
-                           name.Contains("Французская") || name.Contains("Веганская")
-                        ? "🍕" : "🥤",
-                    ForeColor = Color.Orange,
+                    Text = emoji,
+                    ForeColor = emoji == "🍕" ? Color.Orange : Color.Cyan,
                     Font = new Font("Segoe UI", 20),
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter
@@ -519,7 +529,7 @@ namespace norbitpizza
                     AutoSize = true
                 });
 
-                // 🔽 Описание — через TextBox для WordWrap
+                // Описание — через TextBox для WordWrap
                 TextBox descBox = new TextBox
                 {
                     Text = desc,
@@ -603,7 +613,6 @@ namespace norbitpizza
                         pb.Width = tileWidth - 20;
                     }
 
-                    // Обновляем размер описания (TextBox)
                     if (tile.Controls.Count > 2 && tile.Controls[2] is TextBox descBox)
                     {
                         descBox.Size = new Size(tileWidth - 20, 60);
@@ -627,4 +636,5 @@ namespace norbitpizza
             UpdateTileSizes();
         }
     }
+
 }
